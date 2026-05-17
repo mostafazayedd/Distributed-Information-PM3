@@ -1,0 +1,230 @@
+{
+  "name": "File Upload — Audit & Central Logging Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "file-upload-event",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "node-webhook-trigger",
+      "name": "Webhook — Upload Event",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "file-upload-audit-webhook"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://audit-log-service:3025/audit",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "actor",
+              "value": "={{ $json.body.user_id }}"
+            },
+            {
+              "name": "action",
+              "value": "file.uploaded"
+            },
+            {
+              "name": "entity",
+              "value": "={{ 'file:' + $json.body.file_id }}"
+            },
+            {
+              "name": "details",
+              "value": "={{ { filename: $json.body.filename, size: $json.body.size } }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-audit-log",
+      "name": "Audit Log — Record Upload",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://central-logging-service:3026/logs",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "service",
+              "value": "upload-session"
+            },
+            {
+              "name": "level",
+              "value": "info"
+            },
+            {
+              "name": "topic",
+              "value": "upload.completed"
+            },
+            {
+              "name": "message",
+              "value": "={{ '[UPLOAD] File uploaded — user=' + $('Webhook — Upload Event').item.json.body.user_id + ' file=' + $('Webhook — Upload Event').item.json.body.file_id }}"
+            },
+            {
+              "name": "payload",
+              "value": "={{ $('Webhook — Upload Event').item.json.body }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-central-logging",
+      "name": "Central Logging — Log Upload Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [720, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://notification-service:3028/notify/email",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "to",
+              "value": "={{ $('Webhook — Upload Event').item.json.body.user_email }}"
+            },
+            {
+              "name": "subject",
+              "value": "Your file has been uploaded successfully"
+            },
+            {
+              "name": "message",
+              "value": "={{ 'Hello! Your file ' + $('Webhook — Upload Event').item.json.body.filename + ' has been uploaded successfully.' }}"
+            },
+            {
+              "name": "file_id",
+              "value": "={{ $('Webhook — Upload Event').item.json.body.file_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-notification",
+      "name": "Notification — Email User",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [960, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: true, message: 'Upload event processed', audit_id: $('Audit Log — Record Upload').item.json.data.log.id, log_id: $('Central Logging — Log Upload Event').item.json.data.log.id } }}",
+        "options": {}
+      },
+      "id": "node-response",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1200, 300]
+    }
+  ],
+  "connections": {
+    "Webhook — Upload Event": {
+      "main": [
+        [
+          {
+            "node": "Audit Log — Record Upload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Audit Log — Record Upload": {
+      "main": [
+        [
+          {
+            "node": "Central Logging — Log Upload Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Central Logging — Log Upload Event": {
+      "main": [
+        [
+          {
+            "node": "Notification — Email User",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notification — Email User": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "id": "student13-file-upload-audit-pipeline",
+  "meta": {
+    "instanceId": "student13-audit-central-logging",
+    "templateCredsSetupCompleted": true
+  },
+  "tags": [
+    {
+      "name": "student13",
+      "createdAt": "2026-05-17T00:00:00.000Z"
+    },
+    {
+      "name": "observability",
+      "createdAt": "2026-05-17T00:00:00.000Z"
+    },
+    {
+      "name": "pm3-bonus",
+      "createdAt": "2026-05-17T00:00:00.000Z"
+    }
+  ]
+}
